@@ -44,3 +44,9 @@
 
 (defun trace-cpu ()
   (trace step-cpu :report nil :print *cpu*))
+
+(defmacro trace-cpu-when (condition)
+  `(trace step-cpu
+          :report nil
+          :print *cpu*
+          :condition ,condition))
