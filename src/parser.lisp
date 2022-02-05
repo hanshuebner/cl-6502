@@ -105,7 +105,9 @@
 (defun parse-directive (label stream)
   (make-instruction :label label
                     :directive (fetch-directive stream)
-                    :value (fetch-expression (skip-white-space stream))))
+                    :value (loop for expression = (fetch-expression (skip-white-space stream))
+                                 while expression
+                                 collect expression)))
 
 (defun parse-instruction (label stream)
   (let* ((opcode (fetch-opcode (skip-white-space stream)))

@@ -82,20 +82,25 @@
      ,@body))
 
 (defdirective :byte (value pc)
-  (list (make-byte value pc nil)))
+  (loop for byte in value
+        collect (make-byte byte pc nil)))
 
 (defdirective :word (value pc)
-  (list (make-byte value pc :low) (make-byte value pc :high)))
+  (loop for word in value
+        append (list (make-byte word pc :low) (make-byte word pc :high))))
 
 (defdirective :align (value pc)
-  (loop for i below (- value (mod pc value)) collect 0))
+  (destructuring-bind (modulo) value
+    (loop for i below (- modulo (mod pc modulo)) collect 0)))
 
 (defdirective :fill (value pc)
-  (loop for i below value collect 0))
+  (destructuring-bind (count &optional (byte 0)) value
+    (loop for i below count collect byte)))
 
 (defdirective :org (value pc)
-  (assert (<= pc value))
-  (loop for i from pc below value collect 0))
+  (destructuring-bind (origin) value
+    (assert (<= pc origin))
+    (loop for i from pc below origin collect 0)))
 
 (defun assemble-instruction (instruction pc env)
   "Given an instruction, and the current program counter, fill the environment
