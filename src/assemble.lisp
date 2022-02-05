@@ -15,8 +15,9 @@
   (assemble-code-block (parse-code source) init-env org-start))
 
 (defstruct instruction
-  "Represents a single line of code."
+  "Represents a single assembly line."
   (label        nil :type (or null string))
+  (directive    nil :type (or null string))
   (opcode       nil :type (or null symbol))
   (address-mode nil :type (or null symbol list))
   (value        nil :type (or null u16 list string)))
@@ -70,15 +71,45 @@
        do (resolve-byte (aref output i) env))
     output))
 
+(defgeneric process-directive (name value pc))
+
+(defmethod process-directive (name value pc)
+  (format t "Unknown assembly directive ~A skipped~%" name)
+  nil)
+
+(defmacro defdirective (name (value pc) &body body)
+  `(defmethod process-directive ((,(gensym) (eql ,name)) ,value ,pc)
+     ,@body))
+
+(defdirective :byte (value pc)
+  (list (make-byte value pc nil)))
+
+(defdirective :word (value pc)
+  (list (make-byte value pc :low) (make-byte value pc :high)))
+
+(defdirective :align (value pc)
+  (loop for i below (- value (mod pc value)) collect 0))
+
+(defdirective :fill (value pc)
+  (loop for i below value collect 0))
+
+(defdirective :org (value pc)
+  (assert (<= pc value))
+  (loop for i from pc below value collect 0))
+
 (defun assemble-instruction (instruction pc env)
   "Given an instruction, and the current program counter, fill the environment
    with any labels and assemble instruction to a list of bytes."
-  (with-slots (opcode value label) instruction
+  (with-slots (opcode value label directive) instruction
     (when label
       (setf (gethash label env) pc))
-    (when opcode
-      (let ((mode (decide-address-mode instruction env)))
-        (list* (find-opcode opcode mode) (process-args value mode pc))))))
+    (assert (not (and directive opcode)))
+    (cond
+      (directive
+       (process-directive (intern (string-upcase (subseq directive 1)) 'keyword) value pc))
+      (opcode
+       (let ((mode (decide-address-mode instruction env)))
+         (list* (find-opcode opcode mode) (process-args value mode pc)))))))
 
 (defun find-opcode (opcode mode)
   "Finds an opcode matching OPCODE and MODE, raising ILLEGAL-OPCODE otherwise."
@@ -127,7 +158,7 @@
      (let ((addr (gethash addr env)))
        (and (numberp addr) (< addr +max-byte+))))
     ((listp addr) nil)
-    (t (error "Invalid address" :argument addr))))
+    (t (error "Invalid address ~A" addr))))
 
 (defun make-byte (value pc type)
   "Given an integer, return a single byte for the required type. Given a label,
@@ -136,7 +167,7 @@
     ((stringp value)
      (lambda (env)
        (let ((addr (or (gethash value env)
-                       (error "Undefined label" :argument value))))
+                       (error "Undefined label ~A" value))))
          (when (eq type :relative)
            (setf addr (- addr pc +relative-branch-size-byte+)))
          (make-byte addr pc type))))
@@ -148,7 +179,7 @@
             (make-and-resolve-byte operand-2 pc type env)))))
     ((numberp value)
      (if (eq type :high) (floor (/ value +max-byte+)) (mod value +max-byte+)))
-    (t (error "Cannot make-byte" :argument value))))
+    (t (error "Cannot make-byte ~A" value))))
 
 (defun make-and-resolve-byte (operand pc type env)
   "Given an operand, convert it to a byte, resolving any delayed functions."

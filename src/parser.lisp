@@ -65,6 +65,7 @@
     (list (loop for address-mode in *address-modes*
              when (multiple-value-bind (start end match-start match-end)
                       (cl-ppcre:scan (reader address-mode) stream)
+                    (declare (ignore end))
                     (when start
                       (setf value-match (list match-start match-end))))
              collect address-mode) value-match)))
@@ -94,16 +95,33 @@
     (substream-advance stream value-start value-end)
     (list (fetch-expression stream) possible-modes)))
 
-(defun parse-line (text)
-  "Converts a line of text into an instruction representing the assembly code."
-  (let* ((stream (make-stream text))
-         (label (fetch-label (skip-white-space stream)))
-         (opcode (fetch-opcode (skip-white-space stream)))
+(defun fetch-directive (stream)
+  (try-fetch stream "^\.[a-zA-Z][a-zA-Z0-9_]*"))
+
+(defun next-char (stream)
+  (when (plusp (length (skip-white-space stream)))
+    (aref stream 0)))
+
+(defun parse-directive (label stream)
+  (make-instruction :label label
+                    :directive (fetch-directive stream)
+                    :value (fetch-expression (skip-white-space stream))))
+
+(defun parse-instruction (label stream)
+  (let* ((opcode (fetch-opcode (skip-white-space stream)))
          (operand (fetch-operand (skip-white-space stream)))
          (value (first operand))
          (address-modes (second operand)))
     (make-instruction :label label :opcode opcode :value value
                       :address-mode address-modes)))
+
+(defun parse-line (text)
+  "Converts a line of text into an instruction representing the assembly code."
+  (let* ((stream (make-stream text))
+         (label (fetch-label (skip-white-space stream))))
+    (if (eql (next-char stream) #\.)
+        (parse-directive label stream)
+        (parse-instruction label stream))))
 
 (defun strip-comment (text)
   "Removes comment and white space from end of string."
