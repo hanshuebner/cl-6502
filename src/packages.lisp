@@ -2,7 +2,8 @@
   (:use :cl)
   (:import-from :alexandria #:compose #:emptyp #:flatten #:make-keyword #:named-lambda)
   (:export ;; Public API
-           #:execute #:step-cpu #:trace-cpu #:asm #:disasm #:disasm-to-str #:disasm-to-list
+           #:execute #:step-cpu #:trace-cpu #:trace-cpu-when #:trace-cpu-between
+           #:asm #:disasm #:disasm-to-str #:disasm-to-list
            #:current-instruction #:get-byte #:get-word #:get-range #:*cpu* #:cpu
            #:nmi #:reset #:jit-step #:*opcode-meta*
            ;; CPU struct
@@ -17,9 +18,11 @@
 (defpackage :cl-6502
   (:documentation "Homepage: <a href=\"http://github.com/redline6561/cl-6502\">Github</a>")
   (:use :cl)
-  (:import-from :6502 #:execute #:step-cpu #:trace-cpu #:asm #:disasm #:disasm-to-str #:disasm-to-list
+  (:import-from :6502 #:execute #:step-cpu #:trace-cpu #:trace-cpu-when #:trace-cpu-between
+                      #:asm #:disasm #:disasm-to-str #:disasm-to-list
                       #:current-instruction #:get-byte #:get-word #:get-range #:*cpu* #:cpu
                       #:nmi #:reset #:jit-step)
-  (:export #:execute #:step-cpu #:trace-cpu #:asm #:disasm #:disasm-to-str #:disasm-to-list
+  (:export #:execute #:step-cpu #:trace-cpu #:trace-cpu-when #:trace-cpu-between
+           #:asm #:disasm #:disasm-to-str #:disasm-to-list
            #:current-instruction #:get-byte #:get-word #:get-range #:*cpu* #:cpu
            #:nmi #:reset #:jit-step))

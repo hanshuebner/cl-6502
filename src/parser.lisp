@@ -96,34 +96,32 @@
     (list (fetch-expression stream) possible-modes)))
 
 (defun fetch-directive (stream)
-  (try-fetch stream "^\.[a-zA-Z][a-zA-Z0-9_]*"))
+  (let ((directive (try-fetch stream "^\.[a-zA-Z][a-zA-Z0-9_]*")))
+    (when directive
+      (intern (string-upcase (subseq directive 1)) 'keyword))))
 
 (defun next-char (stream)
   (when (plusp (length (skip-white-space stream)))
     (aref stream 0)))
 
-(defun parse-directive (label stream)
-  (make-instruction :label label
+(defun parse-directive (line label stream)
+  (make-instruction :line line
+                    :label label
                     :directive (fetch-directive stream)
                     :value (loop for expression = (fetch-expression (skip-white-space stream))
                                  while expression
                                  collect expression)))
 
-(defun parse-instruction (label stream)
+(defun parse-instruction (line label stream)
   (let* ((opcode (fetch-opcode (skip-white-space stream)))
          (operand (fetch-operand (skip-white-space stream)))
          (value (first operand))
          (address-modes (second operand)))
-    (make-instruction :label label :opcode opcode :value value
+    (make-instruction :line line
+                      :label label
+                      :opcode opcode
+                      :value value
                       :address-mode address-modes)))
-
-(defun parse-line (text)
-  "Converts a line of text into an instruction representing the assembly code."
-  (let* ((stream (make-stream text))
-         (label (fetch-label (skip-white-space stream))))
-    (if (eql (next-char stream) #\.)
-        (parse-directive label stream)
-        (parse-instruction label stream))))
 
 (defun strip-comment (text)
   "Removes comment and white space from end of string."
@@ -131,8 +129,16 @@
     (when pos (setf text (subseq text 0 pos))))
   (string-right-trim " " text))
 
+(defun parse-line (line)
+  "Converts a line of text into an instruction representing the assembly code."
+  (let* ((stream (make-stream (strip-comment line)))
+         (label (fetch-label (skip-white-space stream))))
+    (if (eql (next-char stream) #\.)
+        (parse-directive line label stream)
+        (parse-instruction line label stream))))
+
 (defun parse-code (text)
   "Parses the assembly source text and returns the assembled code as a list of
    alists."
   (loop for line in (cl-ppcre:split "\\n" text)
-        when (parse-line (strip-comment line)) collect it))
+        when (parse-line line) collect it))

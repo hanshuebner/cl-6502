@@ -5,15 +5,18 @@
 (deftype u8 () '(unsigned-byte 8))
 (deftype u16 () '(unsigned-byte 16))
 
-(defstruct cpu
-  "A 6502 CPU with an extra slot for tracking the cycle count/clock ticks."
-  (pc #xfffc :type u16)                 ;; program counter
-  (sp #xfd   :type u8)                  ;; stack pointer
-  (sr #x24   :type u8)                  ;; status register
-  (xr 0      :type u8)                  ;; x register
-  (yr 0      :type u8)                  ;; y register
-  (ar 0      :type u8)                  ;; accumulator
-  (cc 0      :type fixnum))             ;; cycle counter
+(defclass cpu ()
+  ((pc :accessor cpu-pc :initform #xfffc :type u16)                 ;; program counter
+   (sp :accessor cpu-sp :initform #xfd   :type u8)                  ;; stack pointer
+   (sr :accessor cpu-sr :initform #x24   :type u8)                  ;; status register
+   (xr :accessor cpu-xr :initform 0      :type u8)                  ;; x register
+   (yr :accessor cpu-yr :initform 0      :type u8)                  ;; y register
+   (ar :accessor cpu-ar :initform 0      :type u8)                  ;; accumulator
+   (cc :accessor cpu-cc :initform 0      :type fixnum))             ;; cycle counter
+  (:documentation   "A 6502 CPU with an extra slot for tracking the cycle count/clock ticks."))
+
+(defun make-cpu ()
+  (make-instance 'cpu))
 
 (defmethod initialize-instance :after ((cpu cpu) &key)
   (setf (cpu-pc cpu) (absolute cpu)))
@@ -27,9 +30,6 @@
 (declaim (type (simple-array u8 (#x10000)) *ram*))
 (defparameter *ram* (bytevector #x10000)
   "A lovely hunk of bytes.")
-
-(defparameter *cpu* (make-cpu)
-  "The 6502 instance used by default during execution.")
 
 (declaim (type (simple-vector 256) *opcode-funs*))
 (defparameter *opcode-funs* (make-array #x100 :element-type '(or function null) :initial-element nil)
@@ -204,3 +204,7 @@ list of opcode metadata lists: (opcode cycles bytes mode)."
                      ,@(when track-pc
                          `((incf (cpu-pc cpu) ,(1- bytes))))
                      (incf (cpu-cc cpu) ,cycles))))))
+
+(defparameter *cpu* (make-cpu)
+  "The 6502 instance used by default during execution.")
+

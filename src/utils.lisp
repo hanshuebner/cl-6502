@@ -18,9 +18,44 @@
                               name
                               (format nil "~A ~A" name args)))))))
 
+(defclass symbolic-cpu (6502:cpu)
+  ((env :accessor cpu-env :initarg :env)
+   (symbolic-addresses :reader cpu-symbolic-addresses :initform (make-array 65536))
+   (symbolic-address-max-length :reader cpu-symbolic-address-max-length)))
+
+(defmethod (setf cpu-env) :after (env (cpu symbolic-cpu))
+  (update-symbolic-addresses cpu env))
+
+(defmethod update-symbolic-addresses ((cpu symbolic-cpu) env)
+  (with-slots (symbolic-addresses symbolic-address-max-length) cpu
+    (fill symbolic-addresses nil)
+    (maphash (lambda (label address)
+               (setf (aref symbolic-addresses address) label))
+             env)
+    (loop with label-address = 0
+          for i below (length symbolic-addresses)
+          if (aref symbolic-addresses i)
+             do (setf label-address i)
+          else
+            do (setf (aref symbolic-addresses i)
+                     (format nil "~@[~A~]+~D"
+                             (aref symbolic-addresses label-address)
+                             (- i label-address))))
+    (setf symbolic-address-max-length (reduce #'max (map 'list #'length symbolic-addresses)))))
+
+(defmethod initialize-instance :after ((cpu symbolic-cpu) &key env)
+  (update-symbolic-addresses cpu env))
+
+(defgeneric format-address (cpu address)
+  (:method (cpu address)
+    (format nil "$~4,'0X" address)))
+
+(defmethod format-address ((cpu symbolic-cpu) address)
+  (format nil "$~4,'0X ~VA " address (cpu-symbolic-address-max-length cpu) (aref (cpu-symbolic-addresses cpu) address)))
+
 (defmethod print-object ((cpu cpu) out)
-  (format out "#<CPU PC:$~4,'0X A:$~2,'0X X:$~2,'0X Y:$~2,'0X SR:$~2,'0X (~A) SP:$~2,'0X (~:D) - ~A>"
-          (cpu-pc cpu)
+  (format out "#<CPU PC:~A A:$~2,'0X X:$~2,'0X Y:$~2,'0X SR:$~2,'0X (~A) SP:$~2,'0X (~:D) - ~A>"
+          (format-address cpu (cpu-pc cpu))
           (cpu-ar cpu)
           (cpu-xr cpu)
           (cpu-yr cpu)
@@ -50,3 +85,9 @@
           :report nil
           :print *cpu*
           :condition ,condition))
+
+(defmacro trace-cpu-between (from to)
+  `(trace step-cpu
+          :report nil
+          :print *cpu*
+          :condition (< ,from (6502:cpu-pc cl-6502:*cpu*) ,to)))

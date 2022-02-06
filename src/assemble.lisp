@@ -5,19 +5,20 @@
 (defparameter +absolute-modes+ '(absolute absolute-x absolute-y))
 (defparameter +zero-page-modes+ '(zero-page zero-page-x zero-page-y))
 
-(defgeneric asm (source &optional init-env org-start)
+(defgeneric asm (source &key env org &allow-other-keys)
   (:documentation "Assemble SOURCE into a bytevector and return it."))
 
-(defmethod asm ((source list) &optional init-env org-start)
-  (assemble-code-block (list-to-instructions source) init-env org-start))
+(defmethod asm ((source list) &rest keys)
+  (apply #'assemble-code-block (list-to-instructions source) keys))
 
-(defmethod asm ((source string) &optional init-env org-start)
-  (assemble-code-block (parse-code source) init-env org-start))
+(defmethod asm ((source string) &rest keys)
+  (apply #'assemble-code-block (parse-code source) keys))
 
 (defstruct instruction
   "Represents a single assembly line."
+  (line         nil :type (or null string))
   (label        nil :type (or null string))
-  (directive    nil :type (or null string))
+  (directive    nil :type (or null symbol))
   (opcode       nil :type (or null symbol))
   (address-mode nil :type (or null symbol list))
   (value        nil :type (or null u16 list string)))
@@ -55,52 +56,104 @@
        (let ((,byte-name (funcall ,place ,env)))
          (setf ,place ,byte-name)))))
 
-(defun assemble-code-block (code-block &optional init-env org-start)
-  "Given a list of instructions, assemble each to a byte vector."
-  (let ((env (or init-env (make-hash-table :test 'equal)))
-        (output (make-array 0 :fill-pointer 0 :adjustable t))
-        (pc-start (or org-start 0)))
-    ; Build byte vector, without labels.
-    (loop for instruction in code-block
-       do (let ((bytes (assemble-instruction instruction
-                                             (+ pc-start (length output)) env)))
-            (loop for b in bytes
-               do (vector-push-extend b output))))
-    ; Resolve labels in the byte vector.
-    (loop for i from 0 below (length output)
-       do (resolve-byte (aref output i) env))
-    output))
+(defun resolve-bytes (bytes env)
+  (loop for i from 0 below (length bytes)
+        do (resolve-byte (nth i bytes) env)))
 
-(defgeneric process-directive (name value pc))
+(defun sorted-symbols (hash-table)
+  (sort (loop for key being the hash-keys of hash-table collect key) #'string-lessp))
 
-(defmethod process-directive (name value pc)
-  (format t "Unknown assembly directive ~A skipped~%" name)
-  nil)
+(defgeneric format-assembly-line (directive pc bytes instruction)
+  (:method (directive pc bytes instruction)
+    (format t "~4,'0X  ~{~2,'0X ~}~14T  ~A~%"
+            pc
+            bytes
+            (instruction-line instruction))))
 
-(defmacro defdirective (name (value pc) &body body)
-  `(defmethod process-directive ((,(gensym) (eql ,name)) ,value ,pc)
-     ,@body))
+(defun create-listing (assembly env)
+  (loop for (pc bytes instruction) in assembly
+        do (format-assembly-line (instruction-directive instruction) pc bytes instruction))
+  (format t ";;~%;; Symbols:~%;;~%")
+  (dolist (symbol (sorted-symbols env))
+    (format t "~20,,,' A ~4,'0X~%" symbol (gethash symbol env))))
 
-(defdirective :byte (value pc)
-  (loop for byte in value
-        collect (make-byte byte pc nil)))
+(defun assemble-code-block (code-block &key (env (make-hash-table :test 'equal)) (org 0) listp)
+  "Given a list of instructions, assemble to a byte vector."
+  (let*
+      ;; First pass - Symbolic bytes to be resolved in second pass
+      ((assembly (loop for instruction in code-block
+                       for pc = org then (+ pc (length bytes))
+                       for bytes = (assemble-instruction instruction pc env)
+                       collect (list pc bytes instruction)))
+       ;; Second pass - Resolve symbolic bytes
+       (output-bytes (flex:with-output-to-sequence (output)
+                       (loop for (pc bytes instruction) in assembly
+                             do (resolve-bytes bytes env)
+                             do (write-sequence bytes output)))))
+    (when listp
+      (create-listing assembly env))
+    (values output-bytes env)))
 
-(defdirective :word (value pc)
-  (loop for word in value
-        append (list (make-byte word pc :low) (make-byte word pc :high))))
+(defgeneric process-directive (name value pc)
+  (:method (name value pc)
+    (format t "Unknown assembly directive ~A skipped~%" name)
+    nil))
 
-(defdirective :align (value pc)
-  (destructuring-bind (modulo) value
-    (loop for i below (- modulo (mod pc modulo)) collect 0)))
+(defmacro defdirective (name () &rest specs)
+  `(progn
+     ,@(mapcar (lambda (spec)
+                 (destructuring-bind (what args &rest body) spec
+                   (ecase what
+                     (:assemble (destructuring-bind (value pc) args
+                                  `(defmethod process-directive ((,(gensym) (eql ,name)) ,value ,pc)
+                                     ,@body)))
+                     (:format (destructuring-bind (pc bytes instruction) args
+                                `(defmethod format-assembly-line ((,(gensym) (eql ,name)) ,pc ,bytes ,instruction)
+                                   ,@body))))))
+               specs)))
 
-(defdirective :fill (value pc)
-  (destructuring-bind (count &optional (byte 0)) value
-    (loop for i below count collect byte)))
+(defun print-directive-with-dump (pc bytes instruction)
+  (format t "~4,'0X  ~14T  ~A~%"
+          pc
+          (instruction-line instruction))
+  (loop for i below (length bytes) by 8
+        do (format t "~4,'0X  ~{~2,'0X ~}~%"
+                   (+ pc i)
+                   (subseq bytes i (min (length bytes) (+ i 8))))))
 
-(defdirective :org (value pc)
-  (destructuring-bind (origin) value
-    (assert (<= pc origin))
-    (loop for i from pc below origin collect 0)))
+(defdirective :byte ()
+  (:assemble (value pc)
+    (loop for byte in value
+          collect (make-byte byte pc nil)))
+  (:format (pc bytes instruction)
+           (print-directive-with-dump pc bytes instruction)))
+
+(defdirective :word ()
+  (:assemble (value pc)
+    (loop for word in value
+          append (list (make-byte word pc :low) (make-byte word pc :high))))
+  (:format (pc bytes instruction)
+           (print-directive-with-dump pc bytes instruction)))
+
+(defdirective :align ()
+  (:assemble (value pc)
+    (destructuring-bind (modulo) value
+      (loop for i below (- modulo (mod pc modulo)) collect 0))))
+
+(defdirective :fill ()
+  (:assemble (value pc)
+    (destructuring-bind (count &optional (byte 0)) value
+      (loop for i below count collect byte))))
+
+(defdirective :org ()
+  (:assemble (value pc)
+    (destructuring-bind (origin) value
+      (assert (<= pc origin))
+      (loop for i from pc below origin collect 0)))
+  (:format (pc bytes instruction)
+           (format t "~4,'0X  ~14T  ~A~%"
+                   pc
+                   (instruction-line instruction))))
 
 (defun assemble-instruction (instruction pc env)
   "Given an instruction, and the current program counter, fill the environment
@@ -111,7 +164,7 @@
     (assert (not (and directive opcode)))
     (cond
       (directive
-       (process-directive (intern (string-upcase (subseq directive 1)) 'keyword) value pc))
+       (process-directive directive value pc))
       (opcode
        (let ((mode (decide-address-mode instruction env)))
          (list* (find-opcode opcode mode) (process-args value mode pc)))))))
