@@ -143,7 +143,11 @@
 (defdirective :fill ()
   (:assemble (value pc)
     (destructuring-bind (count &optional (byte 0)) value
-      (loop for i below count collect byte))))
+      (loop for i below count collect byte)))
+  (:format (pc bytes instruction)
+           (format t "~4,'0X  ~14T  ~A~%"
+                   pc
+                   (instruction-line instruction))))
 
 (defdirective :org ()
   (:assemble (value pc)
