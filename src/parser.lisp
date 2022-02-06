@@ -104,20 +104,22 @@
   (when (plusp (length (skip-white-space stream)))
     (aref stream 0)))
 
-(defun parse-directive (line label stream)
-  (make-instruction :line line
+(defun parse-directive (line-number line label stream)
+  (make-instruction :line-number line-number
+                    :line line
                     :label label
                     :directive (fetch-directive stream)
                     :value (loop for expression = (fetch-expression (skip-white-space stream))
                                  while expression
                                  collect expression)))
 
-(defun parse-instruction (line label stream)
+(defun parse-instruction (line-number line label stream)
   (let* ((opcode (fetch-opcode (skip-white-space stream)))
          (operand (fetch-operand (skip-white-space stream)))
          (value (first operand))
          (address-modes (second operand)))
-    (make-instruction :line line
+    (make-instruction :line-number line-number
+                      :line line
                       :label label
                       :opcode opcode
                       :value value
@@ -129,16 +131,17 @@
     (when pos (setf text (subseq text 0 pos))))
   (string-right-trim " " text))
 
-(defun parse-line (line)
+(defun parse-line (line-number line)
   "Converts a line of text into an instruction representing the assembly code."
   (let* ((stream (make-stream (strip-comment line)))
          (label (fetch-label (skip-white-space stream))))
     (if (eql (next-char stream) #\.)
-        (parse-directive line label stream)
-        (parse-instruction line label stream))))
+        (parse-directive line-number line label stream)
+        (parse-instruction line-number line label stream))))
 
 (defun parse-code (text)
   "Parses the assembly source text and returns the assembled code as a list of
    alists."
   (loop for line in (cl-ppcre:split "\\n" text)
-        when (parse-line line) collect it))
+        for line-number from 1
+        when (parse-line line-number line) collect it))

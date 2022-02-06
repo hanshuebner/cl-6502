@@ -16,6 +16,7 @@
 
 (defstruct instruction
   "Represents a single assembly line."
+  (line-number  nil :type (or null integer))
   (line         nil :type (or null string))
   (label        nil :type (or null string))
   (directive    nil :type (or null symbol))
@@ -65,10 +66,15 @@
 
 (defgeneric format-assembly-line (directive pc bytes instruction)
   (:method (directive pc bytes instruction)
-    (format t "~4,'0X  ~{~2,'0X ~}~14T  ~A~%"
-            pc
-            bytes
-            (instruction-line instruction))))
+    (if (and bytes (length bytes))
+        (format t "~4,'0X  ~{~2,'0X ~}~16T  ~4,' D  ~A~%"
+                pc
+                bytes
+                (instruction-line-number instruction)
+                (instruction-line instruction))
+        (format t "~16T  ~4,' D  ~A~%"
+                (instruction-line-number instruction)
+                (instruction-line instruction)))))
 
 (defun create-listing (assembly env)
   (loop for (pc bytes instruction) in assembly
@@ -113,13 +119,22 @@
                specs)))
 
 (defun print-directive-with-dump (pc bytes instruction)
-  (format t "~4,'0X  ~14T  ~A~%"
-          pc
-          (instruction-line instruction))
-  (loop for i below (length bytes) by 8
-        do (format t "~4,'0X  ~{~2,'0X ~}~%"
-                   (+ pc i)
-                   (subseq bytes i (min (length bytes) (+ i 8))))))
+  (cond
+    ((< (length bytes) 4)
+     (format t "~4,'0X  ~{~2,'0X ~}~16T  ~4,' D  ~A~%"
+             pc
+             bytes
+             (instruction-line-number instruction)
+             (instruction-line instruction)))
+    (t
+     (format t "~4,'0X  ~16T  ~4,' D  ~A~%"
+             pc
+             (instruction-line-number instruction)
+             (instruction-line instruction))
+     (loop for i below (length bytes) by 8
+           do (format t "~4,'0X  ~{~2,'0X ~}~%"
+                      (+ pc i)
+                      (subseq bytes i (min (length bytes) (+ i 8))))))))
 
 (defdirective :byte ()
   (:assemble (value pc)
@@ -145,8 +160,9 @@
     (destructuring-bind (count &optional (byte 0)) value
       (loop for i below count collect byte)))
   (:format (pc bytes instruction)
-           (format t "~4,'0X  ~14T  ~A~%"
+           (format t "~4,'0X  ~16T  ~4,' D  ~A~%"
                    pc
+                   (instruction-line-number instruction)
                    (instruction-line instruction))))
 
 (defdirective :org ()
@@ -155,8 +171,8 @@
       (assert (<= pc origin))
       (loop for i from pc below origin collect 0)))
   (:format (pc bytes instruction)
-           (format t "~4,'0X  ~14T  ~A~%"
-                   pc
+           (format t "~16T  ~4,' D  ~A~%"
+                   (instruction-line-number instruction)
                    (instruction-line instruction))))
 
 (defun assemble-instruction (instruction pc env)
