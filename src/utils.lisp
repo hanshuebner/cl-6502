@@ -90,4 +90,4 @@
   `(trace step-cpu
           :report nil
           :print *cpu*
-          :condition (< ,from (6502:cpu-pc cl-6502:*cpu*) ,to)))
+          :condition (<= ,from (6502:cpu-pc cl-6502:*cpu*) ,to)))
