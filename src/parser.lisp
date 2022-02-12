@@ -131,10 +131,14 @@
     (when pos (setf text (subseq text 0 pos))))
   (string-right-trim " " text))
 
-(defun parse-line (line-number line)
+(defun parse-line (line-number line labels)
   "Converts a line of text into an instruction representing the assembly code."
   (let* ((stream (make-stream (strip-comment line)))
          (label (fetch-label (skip-white-space stream))))
+    (when label
+      (when (gethash label labels)
+        (error "Duplicate label ~S" label))
+      (setf (gethash label labels) t))
     (if (eql (next-char stream) #\.)
         (parse-directive line-number line label stream)
         (parse-instruction line-number line label stream))))
@@ -142,6 +146,7 @@
 (defun parse-code (text)
   "Parses the assembly source text and returns the assembled code as a list of
    alists."
-  (loop for line in (cl-ppcre:split "\\n" text)
+  (loop with labels = (make-hash-table :test #'equalp)
+        for line in (cl-ppcre:split "\\n" text)
         for line-number from 1
-        when (parse-line line-number line) collect it))
+        when (parse-line line-number line labels) collect it))
