@@ -40,15 +40,24 @@
   (let ((result (try-fetch stream "^[a-zA-Z]{3}")))
     (when result (intern (string-upcase result) :keyword))))
 
+(defun fetch-hex (stream)
+  (when-let (result (try-fetch stream "^[$&][a-fA-F0-9]+"))
+    (parse-integer (subseq result 1) :radix 16)))
+
+(defun fetch-binary (stream)
+  (when-let (result (try-fetch stream "^%[01]+"))
+    (parse-integer (subseq result 1) :radix 2)))
+
+(defun fetch-decimal (stream)
+  (when-let (result (try-fetch stream "^[0-9]+"))
+    (parse-integer result :radix 10)))
+
 (defun fetch-literal (stream)
-  "Fetches a literal value from the stream and returns it as an alist
-   containing the integer value and address mode, or returns nil."
-  (let ((result (try-fetch stream "^((\\$|\\&)[a-fA-F0-9]+|%[0-1]+|[0-9]+)")))
-    (cond
-      ((not result) nil)
-      ((find (aref result 0) "$&") (parse-integer (subseq result 1) :radix 16))
-      ((char= (aref result 0) #\%) (parse-integer (subseq result 1) :radix 2))
-      (t (parse-integer result :radix 10)))))
+  "Fetches a literal value from the stream and returns its integer value
+   or NIL if no number could be parsed."
+  (or (fetch-hex stream)
+      (fetch-binary stream)
+      (fetch-decimal stream)))
 
 (defun fetch-name (stream)
   "Fetches a name from the stream, or returns nil."
@@ -81,11 +90,13 @@
       (t (list address-modes (aref match-starts 0) (aref match-ends 0))))))
 
 (defun fetch-expression (stream)
-  "Fetches an expression from the stream, either a term or a term plus another."
-  (let ((term-1 (fetch-term stream)))
-    (if (try-fetch (skip-white-space stream) "^\\+")
-        (list '+ term-1 (fetch-expression stream))
-        term-1)))
+  "Fetches an expression from the stream."
+  (if-let (hi-or-lo (try-fetch (skip-white-space stream) "(?i)^.(hi|lo) "))
+    (list (intern (string-upcase (subseq hi-or-lo 1 3)) :keyword) (fetch-expression (skip-white-space stream)))
+    (let ((term-1 (fetch-term stream)))
+      (if (try-fetch (skip-white-space stream) "^\\+")
+          (list '+ term-1 (fetch-expression (skip-white-space stream)))
+          term-1))))
 
 (defun fetch-operand (stream)
   "Fetches the operand, returning its numerical value and possible

@@ -1,6 +1,7 @@
 (defpackage :6502
   (:use :cl)
-  (:import-from :alexandria #:compose #:emptyp #:flatten #:make-keyword #:named-lambda)
+  (:import-from :alexandria #:compose #:emptyp #:flatten #:make-keyword #:named-lambda
+                #:when-let #:if-let)
   (:export ;; Public API
            #:execute #:step-cpu #:trace-cpu #:trace-cpu-when #:trace-cpu-between
            #:asm #:disasm #:disasm-to-str #:disasm-to-list

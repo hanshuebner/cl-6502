@@ -241,23 +241,28 @@
 (defun make-byte (value pc type)
   "Given an integer, return a single byte for the required type. Given a label,
    return a delayed function to calculate the same, once labels are defined."
-  (cond
-    ((stringp value)
-     (lambda (env)
-       (let ((addr (or (gethash value env)
-                       (error "Undefined label ~A" value))))
-         (when (eq type :relative)
-           (setf addr (- addr pc +relative-branch-size-byte+)))
-         (make-byte addr pc type))))
-    ((and (listp value) (eq (first value) '+))
-     (lambda (env)
-       (destructuring-bind (unused-plus operand-1 operand-2) value
-         (declare (ignore unused-plus))
-         (+ (make-and-resolve-byte operand-1 pc type env)
-            (make-and-resolve-byte operand-2 pc type env)))))
-    ((numberp value)
-     (if (eq type :high) (floor (/ value +max-byte+)) (mod value +max-byte+)))
-    (t (error "Cannot make-byte ~A" value))))
+  (etypecase value
+    (string (lambda (env)
+              (let ((addr (or (gethash value env)
+                              (error "Undefined label ~A" value))))
+                (when (eq type :relative)
+                  (setf addr (- addr pc +relative-branch-size-byte+)))
+                (make-byte addr pc type))))
+    (list
+     (ecase (first value)
+       (+ (lambda (env)
+            (destructuring-bind (unused-plus operand-1 operand-2) value
+              (declare (ignore unused-plus))
+              (+ (make-and-resolve-byte operand-1 pc type env)
+                 (make-and-resolve-byte operand-2 pc type env)))))
+       (:hi (lambda (env)
+              (make-and-resolve-byte (second value) pc :high env)))
+       (:lo (lambda (env)
+              (make-and-resolve-byte (second value) pc :low env)))))
+    (number
+     (if (eq type :high)
+         (floor (/ value +max-byte+))
+         (mod value +max-byte+)))))
 
 (defun make-and-resolve-byte (operand pc type env)
   "Given an operand, convert it to a byte, resolving any delayed functions."
