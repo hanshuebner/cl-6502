@@ -86,8 +86,8 @@
           :print *cpu*
           :condition ,condition))
 
-(defmacro trace-cpu-between (from to)
+(defmacro trace-cpu-between (from to &optional (print *cpu*))
   `(trace step-cpu
           :report nil
-          :print *cpu*
-          :condition (<= ,from (6502:cpu-pc cl-6502:*cpu*) ,to)))
+          :print ,print
+          :condition (<= ,from (6502:cpu-pc *cpu*) (1- ,to))))
